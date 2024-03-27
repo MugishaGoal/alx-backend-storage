@@ -1,38 +1,39 @@
 #!/usr/bin/env python3
-"""Module for retrieving HTML content from a URL and caching the result."""
+"""Module for retrieving HTML content from a URL and caching the result"""
 
 
+import redis
 import requests
-import time
 from functools import wraps
+from typing import Callable
 
 
-def cache_page(func):
+redis_store = redis.Redis()
+"""The module-level Redis instance.
+"""
+
+
+def data_cacher(method: Callable) -> Callable:
+    """Caches the output of fetched data.
     """
-    Decorator to cache the result of a function with an expiration
-    time of 10 seconds.
-    """
-    cache = {}
+    @wraps(method)
+    def invoker(url: str) -> str:
+        """The wrapper function for caching the output.
+        """
+        redis_store.incr(f'count:{url}')
+        result = redis_store.get(f'result:{url}')
+        if result:
+            return result.decode('utf-8')
+        result = method(url)
+        redis_store.set(f'count:{url}', 0)
+        redis_store.setex(f'result:{url}', 10, result)
+        return result
+    return invoker
 
-    @wraps(func)
-    def wrapper(*args, **kwargs):
-        url = args[0]
-        if url in cache:
-            if time.time() - cache[url]['timestamp'] < 10:
-                return cache[url]['content']
-            else:
-                del cache[url]
-        content = func(*args, **kwargs)
-        cache[url] = {'content': content, 'timestamp': time.time()}
-        return content
 
-    return wrapper
-
-@cache_page
+@data_cacher
 def get_page(url: str) -> str:
-    """Retrieve the HTML content of a URL and cache the result."""
-    response = requests.get(url)
-    if response.status_code == 200:
-        return response.text
-    else:
-        return f"Error: Unable to fetch content from {url}"
+    """Returns the content of a URL after caching the request's response,
+    and tracking the request.
+    """
+    return requests.get(url).text
