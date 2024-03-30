@@ -1,55 +1,63 @@
 #!/usr/bin/env python3
 """
-Log stats
+Script to provide stats about Nginx logs stored in MongoDB
 """
 
 
 from pymongo import MongoClient
+from collections import Counter
 
 
+def count_logs(mongo_collection):
+    """
+    Count logs in collection
+    """
+    total_logs = mongo_collection.count_documents({})
+    print("{} logs".format(total_logs))
 
-def nginx_log_request(nginx_collection):
-    """A script that print nginx request logs"""
-    print('{} logs'.format(nginx_collection.count_documents({})))
-    print('Methods:')
-    methods = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE']
+
+def count_methods(mongo_collection):
+    """
+    Count methods
+    """
+    methods = ["GET", "POST", "PUT", "PATCH", "DELETE"]
     for method in methods:
-        request_count = len(list(nginx_collection.find({'method': method})))
-        print('\tmethod {}: {}'.format(method, request_count))
-    status_checks_count = len(list(
-        nginx_collection.find({'method': 'GET', 'path': '/status'})
-    ))
-    print('{} status check'.format(status_checks_count))
+        count = mongo_collection.count_documents({"method": method})
+        print("method {}: {}".format(method, count))
 
 
-def print_top_ips(server_collection):
-    """Print ip"""
-    print('IPs:')
-    request_logs = server_collection.aggregate(
-        [
-            {
-                '$group': {'_id': "$ip", 'totalRequests': {'$sum': 1}}
-            },
-            {
-                '$sort': {'totalRequests': -1}
-            },
-            {
-                '$limit': 10
-            },
-        ]
-    )
-    for request_log in request_logs:
-        ip = request_log['_id']
-        count_ip_requests = request_log['totalRequests']
-        print('\t{}: {}'.format(ip, count_ip_requests))
+def status_check(mongo_collection):
+    """
+    Count logs with method=GET and path=/status
+    """
+    count = mongo_collection.count_documents({"method": "GET", "path": "/status"})
+    print("{} status check".format(count))
 
 
-def start():
-    """Main function"""
+def top_ips(mongo_collection):
+    """
+    Display top 10 most present IPs
+    """
+    ip_counts = Counter(log['ip'] for log in mongo_collection.find())
+    sorted_ip_counts = sorted(ip_counts.items(), key=lambda x: x[1], reverse=True)[:10]
+    for ip, count in sorted_ip_counts:
+        print("{}: {}".format(ip, count))
+
+
+def main():
+    """
+    Main function
+    """
     client = MongoClient('mongodb://127.0.0.1:27017')
-    nginx_log_request(client.logs.nginx)
-    print_top_ips(client.logs.nginx)
+    logs_collection = client.logs.nginx
+
+    count_logs(logs_collection)
+    print("Methods:")
+    count_methods(logs_collection)
+    status_check(logs_collection)
+    print("IPs:")
+    top_ips(logs_collection)
 
 
-if __name__ == '__main__':
-    start()
+if __name__ == "__main__":
+    main()
